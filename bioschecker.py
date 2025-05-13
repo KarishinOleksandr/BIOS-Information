@@ -1,6 +1,5 @@
 from customtkinter import *
 import wmi
-import clr
 import platform
 
 new_window = None
