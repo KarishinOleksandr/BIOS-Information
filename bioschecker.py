@@ -1,8 +1,10 @@
 from customtkinter import *
 import wmi
+import clr
 import platform
 
 new_window = None
+hwtypes = ['Mainboard','SuperIO','CPU','RAM','GpuNvidia','GpuAti','TBalancer','Heatmaster','HDD']
 
 app = CTk()
 app.geometry("800x600")
@@ -15,7 +17,9 @@ class NewWindow(CTkToplevel):
         self.geometry("800x600")
         self.resizable(False, False)
         self.frame = CTkFrame(self)
-        self.frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
         optionmenu1 = CTkOptionMenu(self.frame, values=["BIOS information", "Test", "Help"], command=menu)
         optionmenu1.grid(row=0, column=0 ,pady=20, padx=20)
         self.master = master
@@ -41,11 +45,14 @@ def get_full_bios_info():
     new_window = opennewwindow()
     new_window.title("BIOS INFO")
 
-    frame = CTkFrame(new_window)
-    frame.pack(fill="both", expand=True, padx=20, pady=20)
+    new_window.frame.grid_rowconfigure(1, weight=1)
+    new_window.frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-    text = CTkTextbox(frame, wrap="word", height=500)
-    text.pack(fill="both", expand=True)
+    label = CTkLabel(new_window.frame, text="Your BIOS information", font=("Arial", 20))
+    label.grid(row=0, column=1, pady=20, padx=20)
+
+    text = CTkTextbox(new_window.frame, wrap="word", height=500)
+    text.grid(row=1, column=0, columnspan=3, padx=20, pady=10, sticky="nsew")
 
     def append(info):
         text.insert("end", info + "\n")
@@ -214,8 +221,53 @@ def menu(valuesget):
     if valuesget == "Test":
         new_window = opennewwindow()
         new_window.title("Test")
-        label = CTkLabel(new_window.frame, text="This is a test window")
-        label.grid(row = 0, column = 2, pady=20, padx=200)
+        label = CTkLabel(new_window.frame, text="This is a test window", font=("Arial", 20))
+        label.grid(row = 0, column = 1, pady=20, padx=20)
+        label = CTkLabel(new_window.frame, text="")
+        label.grid(row = 0, column = 2, pady=20, padx=20)
+        result_box = CTkTextbox(new_window.frame, width=700, height=400)
+        result_box.grid(row=1, column=0, columnspan=3, padx=20, pady=10)
+
+        def log(msg, level="info"):
+            if level == "ok":
+                result_box.insert("end", f"[OK] {msg}\n")
+            elif level == "warn":
+                result_box.insert("end", f"[Warning] {msg}\n")
+            elif level == "critical":
+                result_box.insert("end", f"[CRITICAL] {msg}\n")
+            else:
+                result_box.insert("end", f"{msg}\n")
+
+        c = wmi.WMI()
+        for proc in c.Win32_Processor():
+            log(f"Processor: {proc.Name}")
+            if proc.NumberOfCores <= 2:
+                log("Processor has less or 2 cores — system performance may be low.", level="warn")
+            else:
+                log(f"Processor has {proc.NumberOfCores} cores.", level="ok")
+            total_ram = 0
+            for mem in c.Win32_PhysicalMemory():
+                total_ram += int(mem.Capacity)
+            ram_gb = total_ram // (1024**3)
+            if ram_gb < 4:
+                log(f"Only {ram_gb} GB RAM detected — this is below minimum required.", level="critical")
+            elif ram_gb < 8:
+                log(f"{ram_gb} GB RAM detected — might be insufficient for heavy tasks.", level="warn")
+            else:
+                log(f"{ram_gb} GB RAM detected.", level="ok")
+        gpus = c.Win32_VideoController()
+        if not gpus:
+            log("No graphics card detected.", level="critical")
+        else:
+            for gpu in gpus:
+                log(f"GPU: {gpu.Name}", level="ok")
+        net_adapters = [n for n in c.Win32_NetworkAdapter() if n.MACAddress]
+        if not net_adapters:
+            log("No active network adapter found.", level="critical")
+        else:
+            log(f"{len(net_adapters)} network adapter(s) detected.", level="ok")
+        
+        result_box.configure(state="disabled")    
     elif valuesget == "BIOS information":
         if new_window is not None and new_window.winfo_exists():
             new_window.destroy()
@@ -223,10 +275,32 @@ def menu(valuesget):
     elif valuesget == "Help":
         new_window = opennewwindow()
         new_window.title("Help")
-        label = CTkLabel(new_window.frame, text="This is a help window")
-        label.grid(row = 0, column = 2, pady=20, padx=200)
-        label = CTkLabel(new_window.frame, text="WIP")
-        label.grid(row = 1, column = 0, pady=20, padx=20)
+
+        help_text = (
+            "Welcome to BIOS Checker, a tool designed to help you retrieve and review detailed information "
+            "about your system hardware, BIOS, and performance status. The application provides two main "
+            "features accessible from the dropdown menu.\n\n"
+            "1. BIOS Information: By clicking the \"Get BIOS information\" button, a new window will open displaying "
+            "detailed system data, including BIOS version, release date, serial number, port information, system model and RAM, "
+            "memory module specifications, storage devices, motherboard details, processor specs, operating system version, "
+            "network adapter data, and graphics card info. Additionally, general platform details such as OS architecture and machine type are included.\n\n"
+            "2. Test: Selecting \"Test\" from the dropdown menu opens a window that performs a basic system health analysis. "
+            "The tool checks the number of CPU cores and flags low-performance setups. It calculates total installed RAM and notifies you "
+            "if the memory is below recommended levels. It also detects graphics cards and network adapters, providing status messages labeled "
+            "as [OK], [Warning], or [CRITICAL] to highlight the severity of any findings.\n\n"
+            "Tips: If any section shows \"N/A\", it means the data could not be retrieved—either because the component is not present or not accessible. "
+            "This tool is designed for Windows systems only and should be run with appropriate permissions to access all system data. It is ideal for quick diagnostics, "
+            "IT support checks, or verifying system specs.\n\n"
+        )
+
+        label = CTkLabel(new_window.frame, text="User Help", font=("Arial", 18, "bold"))
+        label.grid(row=0, column=1, pady=(10, 0), padx=20)
+
+        help_box = CTkTextbox(new_window.frame, wrap="word", width=700, height=500)
+        help_box.insert("0.0", help_text)
+        help_box.configure(state="disabled")
+        help_box.grid(row=1, column=0, columnspan=3, padx=20, pady=10)
+
 
 optionmenu = CTkOptionMenu(app, values=["BIOS information", "Test", "Help"], command=menu)
 optionmenu.grid(row=0, column=0 ,pady=20, padx=20)
